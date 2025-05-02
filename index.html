@@ -1,0 +1,2074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Board</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    <style>
+        /* Custom styles for drag feedback */
+        .kanban-column.drag-over {
+            background-color: #e0f2fe; /* Light blue background on drag over */
+            border-color: #38bdf8; /* Sky blue border */
+        }
+        .task-card.dragging {
+            opacity: 0.5;
+            transform: rotate(3deg);
+        }
+        /* Ensure minimum height for columns to allow dropping when empty */
+        .kanban-column {
+            min-height: 200px;
+        }
+        /* Style for the add task button */
+        .add-task-btn {
+            transition: background-color 0.3s ease;
+        }
+        .add-task-btn:hover {
+            background-color: #1e40af; /* Darker blue on hover */
+        }
+         /* Style for delete button */
+        .delete-task-btn {
+            font-size: 0.75rem; /* Smaller text */
+            padding: 2px 4px; /* Smaller padding */
+            line-height: 1; /* Adjust line height */
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background-color: rgba(239, 68, 68, 0.7); /* Semi-transparent red */
+            border-radius: 50%;
+            color: white;
+            cursor: pointer;
+            opacity: 0; /* Hidden by default */
+            transition: opacity 0.2s ease-in-out;
+            z-index: 10; /* Ensure it's above task text */
+        }
+        .task-card:hover .delete-task-btn {
+            opacity: 1; /* Show on hover */
+        }
+        .delete-task-btn:hover {
+            background-color: rgba(220, 38, 38, 1); /* Solid red on hover */
+        }
+
+        /* Modal styles */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 100; /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+            overflow: auto; /* Enable scroll if needed */
+            background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+            backdrop-filter: blur(5px); /* Blur background */
+            padding-top: 60px;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto; /* 5% from the top and centered */
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            width: 90%; /* Could be more responsive */
+            max-width: 500px; /* Max width for larger screens */
+        }
+
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .close-button:hover,
+        .close-button:focus {
+            color: #000;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        /* Font */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Task Card details display */
+        .task-details {
+            font-size: 0.875rem; /* text-sm */
+            color: #4b5563; /* gray-600 */
+            margin-top: 8px; /* mt-2 */
+            border-top: 1px solid #d1d5db; /* border-t border-gray-300 */
+            padding-top: 8px; /* pt-2 */
+        }
+
+        .task-details p {
+            margin-bottom: 4px; /* mb-1 */
+        }
+
+        .task-details strong {
+            font-weight: 500; /* font-medium */
+            color: #1f2937; /* gray-800 */
+        }
+
+        /* Style for the Clear All button */
+        .clear-all-btn {
+             transition: background-color 0.3s ease;
+        }
+        .clear-all-btn:hover {
+             background-color: #b91c1c; /* Darker red on hover */
+        }
+
+        /* Password Overlay Styles */
+        #passwordOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom right, #e0f7fa, #e1bee7); /* Light gradient background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 200; /* Ensure it's above everything */
+        }
+
+        #passwordPrompt {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        #passwordInput {
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            width: 100%;
+            box-sizing: border-box; /* Include padding and border in element's total width */
+            font-size: 1rem;
+        }
+
+        #unlockButton {
+            background-color: #4f46e5; /* Indigo */
+            color: white;
+            font-weight: bold;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            font-size: 1rem;
+        }
+
+        #unlockButton:hover {
+            background-color: #4338ca; /* Darker indigo */
+        }
+
+        #errorMessage {
+            color: #ef4444; /* Red */
+            margin-top: 15px;
+            font-size: 0.9rem;
+            min-height: 1.5em; /* Reserve space to prevent layout shift */
+        }
+
+        /* Tab Styles */
+        #boardTabs {
+            display: flex;
+            flex-wrap: wrap;
+            margin-bottom: 1.5rem; /* mb-6 */
+            border-bottom: 2px solid #e5e7eb; /* border-gray-200 */
+        }
+
+        .tab-button {
+            padding: 0.75rem 1.25rem; /* py-3 px-5 */
+            font-size: 1rem;
+            font-weight: 500; /* font-medium */
+            color: #6b7280; /* gray-500 */
+            border: none;
+            background-color: transparent;
+            cursor: pointer;
+            transition: color 0.2s ease, border-bottom-color 0.2s ease;
+            border-bottom: 2px solid transparent;
+            position: relative; /* Needed for delete button positioning */
+            display: flex; /* Use flex for content and delete button */
+            align-items: center;
+            gap: 4px; /* Space between text and delete button */
+             /* Added for color */
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            margin-right: 4px; /* Space between tabs */
+        }
+
+        .tab-button:hover {
+            color: #1f2937; /* gray-800 */
+            border-bottom-color: #d1d5db; /* gray-300 */
+        }
+
+        .tab-button.active {
+            color: #4f46e5; /* indigo-600 */
+            border-bottom-color: #4f46e5; /* indigo-600 */
+            font-weight: 600; /* font-semibold */
+        }
+
+         /* Style for the color indicator on the tab */
+         .tab-color-indicator {
+             display: inline-block;
+             width: 12px;
+             height: 12px;
+             border-radius: 4px;
+             margin-right: 4px;
+             border: 1px solid rgba(0,0,0,0.1); /* Subtle border */
+         }
+
+
+        .tab-button .delete-board-btn {
+            flex-shrink: 0; /* Prevent shrinking */
+            background-color: rgba(239, 68, 68, 0.7); /* Semi-transparent red */
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 0.6rem;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            opacity: 0; /* Hidden by default */
+            transition: opacity 0.2s ease-in-out;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .tab-button:hover .delete-board-btn {
+            opacity: 1; /* Show on hover */
+        }
+
+        .tab-button .delete-board-btn:hover {
+             background-color: rgba(220, 38, 38, 1); /* Solid red on hover */
+        }
+
+        /* Style for the input field when editing tab name */
+        .tab-button .tab-edit-container {
+             display: flex;
+             align-items: center;
+             gap: 4px;
+        }
+
+        .tab-button .tab-edit-container input[type="text"] {
+            flex-grow: 1; /* Allow input to take available space */
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #1f2937;
+            outline: none;
+            min-width: 50px; /* Ensure input is visible even for short names */
+        }
+         .tab-button .tab-edit-container input[type="color"] {
+             padding: 2px;
+             height: 24px;
+             width: 24px;
+             border-radius: 4px;
+             border: 1px solid #d1d5db;
+             cursor: pointer;
+         }
+
+
+        #addBoardTab {
+            padding: 0.75rem 1.25rem; /* py-3 px-5 */
+            font-size: 1rem;
+            font-weight: 500;
+            color: #10b981; /* emerald-500 */
+            border: none;
+            background-color: transparent;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+
+        #addBoardTab:hover {
+            color: #059669; /* emerald-600 */
+        }
+
+        /* Hide board content when not active */
+        .board-content:not(.active) {
+            display: none;
+        }
+
+        /* Default color swatch styling */
+        .color-swatch {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            margin-right: 8px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.2s ease, transform 0.1s ease;
+        }
+
+        .color-swatch:hover {
+            transform: scale(1.1);
+        }
+
+        .color-swatch.selected {
+            border-color: #4f46e5; /* Indigo border for selected */
+            box-shadow: 0 0 5px rgba(79, 70, 229, 0.5); /* Optional shadow */
+        }
+
+        /* Style for the color picker input */
+        #modalTaskColor {
+             padding: 6px; /* Smaller padding */
+             height: 38px; /* Match swatch height roughly */
+             width: 40px; /* Make it smaller */
+             vertical-align: middle; /* Align with swatches */
+        }
+
+        /* Floating Action Button and Container Styles */
+        #floatingActionButton {
+            position: fixed;
+            bottom: 20px; /* Adjust as needed */
+            left: 20px; /* Adjust as needed */
+            z-index: 50; /* Below modal, above content */
+            background-color: #4f46e5; /* Indigo */
+            color: white;
+            width: 56px; /* Standard FAB size */
+            height: 56px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.3s ease;
+        }
+
+        #floatingActionButton:hover {
+            background-color: #4338ca; /* Darker indigo */
+            transform: scale(1.05);
+        }
+
+        #actionButtonsContainer {
+            position: fixed;
+            bottom: 90px; /* Position above the FAB */
+            left: 20px; /* Align with FAB */
+            z-index: 40; /* Below FAB, above content */
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            display: flex;
+            flex-direction: column; /* Stack buttons vertically */
+            gap: 8px; /* Space between buttons */
+            opacity: 0; /* Hidden by default */
+            visibility: hidden; /* Hidden from screen readers/interaction */
+            transform: translateY(20px); /* Start slightly below final position */
+            transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s ease;
+            min-width: 180px; /* Ensure buttons have enough space */
+        }
+
+        #actionButtonsContainer.visible {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0); /* Move to final position */
+        }
+
+        /* Adjust button styles within the floating container */
+        #actionButtonsContainer button {
+            width: 100%; /* Make buttons fill the container width */
+            justify-content: flex-start; /* Align text to the left */
+        }
+
+        /* Style for the column header container to allow double-click */
+        .column-header {
+            display: flex; /* Use flex to align title and potential future elements */
+            align-items: center;
+            justify-content: space-between; /* Space out items */
+            margin-bottom: 1rem;
+            border-bottom: 1px solid #d1d5db; /* border-gray-300 */
+            padding-bottom: 0.5rem;
+            cursor: pointer; /* Indicate it's interactive */
+        }
+
+        .column-header h2 {
+            flex-grow: 1; /* Allow title to take up space */
+            margin-bottom: 0; /* Remove default h2 margin */
+            font-size: 1.25rem; /* text-xl */
+            font-weight: 600; /* font-semibold */
+            color: #4b5563; /* gray-700 */
+        }
+
+        /* Style for the input field when editing column name */
+        .column-header input[type="text"] {
+            flex-grow: 1;
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1f2937;
+            outline: none;
+            margin-right: 0.5rem; /* Space between input and potential future elements */
+        }
+
+        /* Style for the main board color columns */
+        .main-board-column {
+             min-height: 200px;
+             background-color: #ffffff;
+             border-radius: 8px;
+             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+             padding: 1rem;
+        }
+
+        .main-board-column h2 {
+             font-size: 1.25rem;
+             font-weight: 600;
+             margin-bottom: 1rem;
+             padding-bottom: 0.5rem;
+             border-bottom: 2px solid; /* Border to match color */
+        }
+
+
+    </style>
+     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 min-h-screen p-4 md:p-8">
+
+    <div id="passwordOverlay">
+        <div id="passwordPrompt">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">Enter Password to Unlock</h2>
+            <input type="password" id="passwordInput" placeholder="Password" class="w-full p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4">
+            <button id="unlockButton" class="w-full bg-blue-600 text-white font-semibold py-3 px-6 rounded-md shadow hover:bg-blue-700 transition">Unlock</button>
+            <div id="errorMessage" class="text-red-600 mt-4 min-h-[1.5em]"></div>
+        </div>
+    </div>
+
+    <div id="kanbanContent" class="hidden">
+        <div class="container mx-auto max-w-6xl">
+            <h1 class="text-3xl md:text-4xl font-bold text-center text-gray-800 mb-8">Project Board</h1>
+
+            <div id="boardTabs" class="mb-6">
+                </div>
+
+            <div id="boardContainer">
+                 </div>
+        </div>
+    </div>
+
+    <button id="floatingActionButton" title="Show Actions">
+        <i class="fas fa-cog"></i>
+    </button>
+
+    <div id="actionButtonsContainer">
+         <button id="exportTasksBtn" class="w-full sm:w-auto bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-md shadow hover:bg-gray-300 transition text-sm">
+             Export Board
+         </button>
+         <input type="file" id="importTasksInput" accept=".json" class="hidden">
+         <button id="importTasksBtn" class="w-full sm:w-auto bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-md shadow hover:bg-gray-300 transition text-sm">
+             Import Board
+         </button>
+         <button id="clearAllTasksBtn" class="w-full sm:w-auto bg-red-100 text-red-800 font-semibold py-2 px-4 rounded-md clear-all-btn shadow hover:bg-red-200 transition text-sm">
+             Clear Board
+         </button>
+         <hr class="border-gray-300 my-1"> <button id="exportAllBoardsBtn" class="w-full sm:w-auto bg-blue-100 text-blue-800 font-semibold py-2 px-4 rounded-md shadow hover:bg-blue-200 transition text-sm">
+             Export All Boards
+         </button>
+         <input type="file" id="importAllBoardsInput" accept=".json" class="hidden">
+         <button id="importAllBoardsBtn" class="w-full sm:w-auto bg-blue-100 text-blue-800 font-semibold py-2 px-4 rounded-md shadow hover:bg-blue-200 transition text-sm">
+             Import All Boards
+         </button>
+    </div>
+
+
+    <div id="taskModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h3 class="text-xl font-bold mb-4">Edit Task</h3>
+            <input type="hidden" id="modalTaskId">
+            <input type="hidden" id="modalTaskBoardId"> <div class="mb-4">
+                <label for="modalTaskTitle" class="block text-gray-700 text-sm font-bold mb-2">Title:</label>
+                <input type="text" id="modalTaskTitle" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            </div>
+
+             <div class="mb-4">
+                <label for="modalTaskDescription" class="block text-gray-700 text-sm font-bold mb-2">Description:</label>
+                <textarea id="modalTaskDescription" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline h-24"></textarea>
+            </div>
+
+            <div class="mb-4">
+                <label for="modalTaskDueDate" class="block text-gray-700 text-sm font-bold mb-2">Due Date:</label>
+                <input type="date" id="modalTaskDueDate" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            </div>
+
+            <div class="mb-4">
+                <label for="modalTaskAssignee" class="block text-gray-700 text-sm font-bold mb-2">Assignee:</label>
+                <input type="text" id="modalTaskAssignee" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            </div>
+
+             <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Card Color:</label>
+                <div id="defaultColorSwatches" class="flex flex-wrap items-center mb-2 gap-2">
+                     </div>
+                <input type="color" id="modalTaskColor" class="shadow appearance-none border rounded leading-tight focus:outline-none focus:shadow-outline">
+                 <span class="text-gray-600 text-sm ml-2">or pick a custom color</span>
+            </div>
+
+            <div class="flex items-center justify-between">
+                <button id="saveTaskBtn" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- Password Protection ---
+        // IMPORTANT: This is a client-side password check and is NOT secure.
+        // The password ishardcoded and visible in the source code.
+        // Do NOT use this for sensitive information.
+        const correctPassword = "123456"; // <-- Replace with your desired password
+
+        const passwordOverlay = document.getElementById('passwordOverlay');
+        const passwordInput = document.getElementById('passwordInput');
+        const unlockButton = document.getElementById('unlockButton');
+        const errorMessage = document.getElementById('errorMessage');
+        const kanbanContent = document.getElementById('kanbanContent'); // The main content div
+
+        function checkPassword() {
+            if (passwordInput.value === correctPassword) {
+                passwordOverlay.style.display = 'none'; // Hide the overlay
+                kanbanContent.classList.remove('hidden'); // Show the kanban content
+                errorMessage.textContent = ''; // Clear any error message
+                // Initialize the board after successful unlock
+                initializeBoard();
+            } else {
+                errorMessage.textContent = 'Incorrect password. Please try again.';
+                passwordInput.value = ''; // Clear the input field
+                passwordInput.focus(); // Put focus back on the input
+            }
+        }
+
+        // Add event listeners for the password prompt
+        unlockButton.addEventListener('click', checkPassword);
+        passwordInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                checkPassword();
+            }
+        });
+
+
+        // --- Kanban Board Script (Modified for multiple boards, editable columns and tabs, and main board) ---
+
+        // --- DOM Elements ---
+        // These will be accessed after the password is entered
+        let newTaskInput;
+        let addTaskBtn;
+        let exportTasksBtn; // Per board export
+        let importTasksBtn; // Per board import trigger
+        let importTasksInput; // Per board import file input
+        let clearAllTasksBtn; // Per board clear
+        let exportAllBoardsBtn; // All boards export
+        let importAllBoardsBtn; // All boards import trigger
+        let importAllBoardsInput; // All boards import file input
+
+        let boardTabsContainer; // New: Container for tabs
+        let boardContainer; // New: Container for the active board content
+        let defaultColorSwatchesContainer; // New: Container for default color swatches
+
+        // Floating Action Button and its container
+        let floatingActionButton;
+        let actionButtonsContainer;
+
+
+        // Modal Elements (already defined globally, but good to list here)
+        const taskModal = document.getElementById('taskModal');
+        const closeModalBtn = taskModal.querySelector('.close-button');
+        const modalTaskId = document.getElementById('modalTaskId');
+        const modalTaskBoardId = document.getElementById('modalTaskBoardId'); // Added
+        const modalTaskTitle = document.getElementById('modalTaskTitle');
+        const modalTaskDescription = document.getElementById('modalTaskDescription');
+        const modalTaskDueDate = document.getElementById('modalTaskDueDate');
+        const modalTaskAssignee = document.getElementById('modalTaskAssignee');
+        const modalTaskColor = document.getElementById('modalTaskColor');
+        const saveTaskBtn = document.getElementById('saveTaskBtn');
+
+         // Default color options (16 colors)
+        const defaultColors = [
+            '#fef08a', // Yellow 200
+            '#d9f991', // Lime 200
+            '#a7f3d0', // Emerald 200
+            '#bae6fd', // Light Blue 200
+            '#c4b5fd', // Violet 200
+            '#fbcfe8', // Pink 200
+            '#fecaca', // Red 200
+            '#e5e7eb',  // Gray 200 (Default)
+            '#fde68a', // Yellow 300
+            '#a3e635', // Lime 400
+            '#34d399', // Emerald 500
+            '#60a5fa', // Blue 400
+            '#818cf8', // Indigo 400
+            '#e879f9', // Fuchsia 400
+            '#f87171', // Red 400
+            '#9ca3af'  // Gray 400
+        ];
+
+         // Default board colors
+         const defaultBoardColors = [
+             '#d1fae5', // Emerald 100
+             '#e0f2f7', // Light Blue 100
+             '#ede9fe', // Violet 100
+             '#fee2e2', // Red 100
+             '#fffbe0', // Yellow 100
+             '#dbeafe', // Blue 100
+             '#fce7f3', // Pink 100
+             '#e5e7eb'  // Gray 200
+         ];
+
+
+        // --- State ---
+        // Updated state to hold multiple boards and column definitions
+        let boards = {}; // Object where keys are board IDs and values are { name: 'Board Name', color: '#...', columns: [...], tasks: [...] }
+        let activeBoardId = null; // ID of the currently active board
+        const MAIN_BOARD_ID = 'main-board'; // Unique ID for the main board
+
+        // --- Functions ---
+
+        /**
+         * Generates a unique ID (simple implementation)
+         * @returns {string} A unique ID string
+         */
+        function generateId() {
+            return 'id_' + Date.now() + Math.random().toString(36).substring(2, 9);
+        }
+
+        /**
+         * Gets the tasks array for the currently active board.
+         * @returns {Array} The tasks array for the active board, or an empty array if no board is active.
+         */
+        function getActiveBoardTasks() {
+            if (activeBoardId && boards[activeBoardId]) {
+                return boards[activeBoardId].tasks;
+            }
+            return [];
+        }
+
+        /**
+         * Gets the columns array for the currently active board.
+         * @returns {Array} The columns array for the active board, or an empty array if no board is active.
+         */
+        function getActiveBoardColumns() {
+             if (activeBoardId && boards[activeBoardId]) {
+                return boards[activeBoardId].columns;
+            }
+            // Return default columns if no board is active or board has no columns defined
+            return [
+                { id: 'todo', name: 'To Do', color: '#f87171' },
+                { id: 'inprogress', name: 'In Progress', color: '#facc15' },
+                { id: 'review', name: 'Review', color: '#a78bfa' },
+                { id: 'done', name: 'Done', color: '#4ade80' }
+            ];
+        }
+
+         /**
+          * Gets all tasks from all boards.
+          * @returns {Array} An array of all tasks across all boards, with added 'boardId' property.
+          */
+         function getAllTasks() {
+             const allTasks = [];
+             for (const boardId in boards) {
+                 if (boardId !== MAIN_BOARD_ID && boards[boardId].tasks) { // Exclude the main board itself
+                     boards[boardId].tasks.forEach(task => {
+                         // Add the original boardId to the task object for reference
+                         allTasks.push({...task, originalBoardId: boardId});
+                     });
+                 }
+             }
+             return allTasks;
+         }
+
+
+        /**
+         * Creates the HTML element for a task card.
+         * @param {object} task - The task object { id, text, status, description, dueDate, assignee, color, originalBoardId (optional) }
+         * @returns {HTMLElement} The task card div element
+         */
+        function createTaskElement(task) {
+            const taskCard = document.createElement('div');
+            taskCard.id = task.id;
+            // Store original board ID on the element for drag/drop back to original board
+            if (task.originalBoardId) {
+                 taskCard.dataset.originalBoardId = task.originalBoardId;
+            }
+
+            // Added relative positioning for delete button placement
+            // Apply custom color if available, fallback to default gray
+            taskCard.className = `task-card bg-gray-100 p-3 rounded-md shadow cursor-grab border border-gray-200 relative`;
+            if (task.color) {
+                 taskCard.style.backgroundColor = task.color;
+                 // Optional: Adjust text color for contrast if needed based on background color
+                 // taskCard.style.color = isLight(task.color) ? '#000' : '#fff';
+            } else {
+                 taskCard.style.backgroundColor = '#f3f4f6'; // Default Tailwind gray-100
+            }
+
+
+            taskCard.draggable = true;
+
+            // Task Title (main text)
+            const taskTitle = document.createElement('div');
+            taskTitle.textContent = task.text;
+            taskTitle.className = 'font-semibold text-gray-800';
+            taskCard.appendChild(taskTitle);
+
+
+            // Add details section if any extra info exists
+            if (task.description || task.dueDate || task.assignee) {
+                 const detailsDiv = document.createElement('div');
+                 detailsDiv.className = 'task-details';
+
+                 if (task.dueDate) {
+                     try {
+                         // Format date nicely (e.g.,YYYY-MM-DD)
+                         const formattedDate = task.dueDate; // Keeping theYYYY-MM-DD format from input
+                         detailsDiv.innerHTML += `<p><strong>Due:</strong> ${formattedDate}</p>`;
+                     } catch (e) {
+                         console.error("Invalid date format for task", task.id, ":", task.dueDate);
+                     }
+                 }
+                 if (task.assignee) {
+                     detailsDiv.innerHTML += `<p><strong>Assignee:</strong> ${task.assignee}</p>`;
+                 }
+                 // Description is shown in the modal, not typically on the card itself for brevity
+                 // if (task.description) {
+                 //         detailsDiv.innerHTML += `<p><strong>Desc:</strong> ${task.description.substring(0, 50)}...</p>`; // Truncate for card
+                 // }
+
+                 taskCard.appendChild(detailsDiv);
+            }
+
+
+            // Add event listener to open modal on card click (excluding delete button clicks)
+            taskCard.addEventListener('click', (event) => {
+                 // Check if the click target is the delete button or its icon
+                 if (!event.target.closest('.delete-task-btn')) {
+                     // Pass the original board ID to the modal if available
+                     openTaskModal(task.id, task.originalBoardId);
+                 }
+            });
+
+
+            // Create delete button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.innerHTML = '<i class="fas fa-times"></i>'; // Font Awesome X icon
+            deleteBtn.className = 'delete-task-btn';
+            deleteBtn.title = 'Delete task';
+            // Changed from onclick to addEventListener for better event handling
+            deleteBtn.addEventListener('click', (event) => {
+                 event.stopPropagation(); // Prevent dragstart or modal open if clicking delete
+                 // Pass the original board ID to deleteTask if on main board
+                 deleteTask(task.id, task.originalBoardId);
+            });
+            taskCard.appendChild(deleteBtn);
+
+            // Add drag event listeners directly to the task card
+            taskCard.addEventListener('dragstart', dragStart);
+            taskCard.addEventListener('dragend', dragEnd);
+
+
+            return taskCard;
+        }
+
+        /**
+         * Renders the columns and tasks for the currently active board, or the main board view.
+         */
+        function renderBoardContent() {
+            // Hide the input area by default, show only for regular boards
+             const inputArea = document.getElementById('kanbanContent').querySelector('.input-area');
+             if(inputArea) inputArea.style.display = 'none';
+
+            if (activeBoardId === MAIN_BOARD_ID) {
+                 renderMainBoardContent();
+            } else {
+                const activeBoard = boards[activeBoardId];
+                if (!activeBoard) {
+                    boardContainer.innerHTML = '<p class="text-center text-gray-600">Select or add a board.</p>';
+                    return;
+                }
+
+                 // Show the input area for regular boards
+                 if(inputArea) inputArea.style.display = 'flex';
+
+                // Render the standard board structure (input, buttons, columns)
+                boardContainer.innerHTML = `
+                    <div class="input-area mb-6 p-4 bg-white rounded-lg shadow-md flex flex-col sm:flex-row gap-4 items-center">
+                        <input type="text" id="newTaskInput" placeholder="Enter new task title..." class="flex-grow p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button id="addTaskBtn" class="w-full sm:w-auto bg-blue-600 text-white font-semibold py-3 px-6 rounded-md add-task-btn shadow hover:shadow-lg">
+                            Add Task
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        ${getActiveBoardColumns().map(column => `
+                            <div id="${column.id}" data-column-id="${column.id}" class="kanban-column bg-white rounded-lg shadow-lg p-4 border-t-4" style="border-top-color: ${column.color};">
+                                <div class="column-header" data-column-id="${column.id}">
+                                    <h2 class="text-xl font-semibold text-gray-700 mb-0">${column.name}</h2>
+                                </div>
+                                <div class="task-list space-y-3 mt-4"></div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                // Re-get DOM elements specific to the active board after rendering
+                newTaskInput = document.getElementById('newTaskInput');
+                addTaskBtn = document.getElementById('addTaskBtn');
+
+                const columns = boardContainer.querySelectorAll('.kanban-column');
+                const columnHeaders = boardContainer.querySelectorAll('.column-header'); // Get column headers
+
+
+                // Add event listeners for the active board controls
+                addTaskBtn.addEventListener('click', addTask);
+                newTaskInput.addEventListener('keypress', function(event) {
+                    if (event.key === 'Enter') {
+                        addTask();
+                    }
+                });
+
+                 // Add drag and drop event listeners to the columns
+                columns.forEach(column => {
+                    column.addEventListener('dragover', dragOver);
+                    column.addEventListener('dragleave', dragLeave);
+                    column.addEventListener('drop', drop); // Use the standard drop for status changes
+                });
+
+                // Add double-click listener to column headers for editing
+                columnHeaders.forEach(header => {
+                    header.addEventListener('dblclick', handleColumnHeaderDoubleClick);
+                });
+
+
+                // Render tasks for the active board
+                renderTasks();
+            }
+
+             // Update the visibility of action buttons based on the active board
+             updateActionButtonVisibility();
+        }
+
+        /**
+         * Renders the content for the main board, grouping tasks by color.
+         */
+        function renderMainBoardContent() {
+            const allTasks = getAllTasks();
+
+            // Group tasks by color
+            const tasksByColor = allTasks.reduce((acc, task) => {
+                const color = task.color || '#e5e7eb'; // Use default gray if no color
+                if (!acc[color]) {
+                    acc[color] = [];
+                }
+                acc[color].push(task);
+                return acc;
+            }, {});
+
+            // Sort colors (optional, e.g., alphabetically or by frequency)
+            const sortedColors = Object.keys(tasksByColor).sort();
+
+            // Generate HTML for main board columns (color groups)
+            let mainBoardHtml = '<div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">';
+
+            if (sortedColors.length === 0) {
+                 mainBoardHtml += '<p class="text-center text-gray-600 col-span-full">No tasks found across all boards.</p>';
+            } else {
+                sortedColors.forEach(color => {
+                    const tasksInColor = tasksByColor[color];
+                    // Determine text color for contrast
+                    const textColor = isLight(color) ? '#1f2937' : '#f3f4f6'; // Dark gray or light gray
+
+                    mainBoardHtml += `
+                        <div class="main-board-column" data-color="${color}" style="border-top: 4px solid ${color};">
+                            <h2 style="border-bottom-color: ${color}; color: ${textColor};">${colorNameToHex(color) || color}</h2> <div class="task-list space-y-3 mt-4"></div>
+                        </div>
+                    `;
+                });
+            }
+
+            mainBoardHtml += '</div>';
+            boardContainer.innerHTML = mainBoardHtml;
+
+            // Add drag and drop listeners to the main board columns
+            const mainBoardColumns = boardContainer.querySelectorAll('.main-board-column');
+            mainBoardColumns.forEach(column => {
+                 column.addEventListener('dragover', dragOver);
+                 column.addEventListener('dragleave', dragLeave);
+                 column.addEventListener('drop', dropOnMainBoard); // Use a different drop handler for main board
+            });
+
+
+            // Populate the task lists in the main board columns
+            const taskLists = boardContainer.querySelectorAll('.task-list');
+            taskLists.forEach(taskList => {
+                 const color = taskList.closest('.main-board-column').dataset.color;
+                 const tasksToRender = tasksByColor[color];
+                 if (tasksToRender) {
+                     tasksToRender.forEach(task => {
+                         const taskElement = createTaskElement(task);
+                         taskList.appendChild(taskElement);
+                     });
+                 }
+            });
+        }
+
+         /**
+          * Helper function to determine if a color is light.
+          * Used to choose appropriate text color for contrast.
+          * @param {string} hexColor - The color in hex format (e.g., '#RRGGBB').
+          * @returns {boolean} True if the color is light, false otherwise.
+          */
+         function isLight(hexColor) {
+             if (!hexColor || typeof hexColor !== 'string' || !hexColor.startsWith('#')) {
+                 return true; // Assume light if invalid color
+             }
+             const hex = hexColor.replace('#', '');
+             const r = parseInt(hex.substring(0, 2), 16);
+             const g = parseInt(hex.substring(2, 4), 16);
+             const b = parseInt(hex.substring(4, 6), 16);
+             const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+             return luminance > 0.5; // Threshold for light vs dark
+         }
+
+         /**
+          * Helper function to attempt to get a common name for a hex color.
+          * Very basic implementation. Could be expanded.
+          * @param {string} hexColor - The color in hex format.
+          * @returns {string | null} A common color name or null if not recognized.
+          */
+         function colorNameToHex(hexColor) {
+             const colors = {
+                 '#fef08a': 'Yellow',
+                 '#d9f991': 'Lime',
+                 '#a7f3d0': 'Emerald',
+                 '#bae6fd': 'Light Blue',
+                 '#c4b5fd': 'Violet',
+                 '#fbcfe8': 'Pink',
+                 '#fecaca': 'Red',
+                 '#e5e7eb': 'Gray',
+                 '#fde68a': 'Yellow',
+                 '#a3e635': 'Lime',
+                 '#34d399': 'Emerald',
+                 '#60a5fa': 'Blue',
+                 '#818cf8': 'Indigo',
+                 '#e879f9': 'Fuchsia',
+                 '#f87171': 'Red',
+                 '#9ca3af': 'Gray'
+                 // Add more common colors if needed
+             };
+             return colors[hexColor.toLowerCase()] || hexColor; // Return name if found, otherwise hex
+         }
+
+
+        /**
+         * Renders all tasks onto the active board based on their status (standard board)
+         * or onto the main board based on their color (main board).
+         */
+        function renderTasks() {
+            if (activeBoardId === MAIN_BOARD_ID) {
+                renderMainBoardContent(); // Re-render main board
+            } else {
+                const activeBoardTasks = getActiveBoardTasks();
+
+                // Clear existing tasks from lists in all columns of the active board
+                const taskLists = boardContainer.querySelectorAll('.task-list');
+                taskLists.forEach(list => list.innerHTML = '');
+
+                if (!activeBoardTasks || activeBoardTasks.length === 0) {
+                     return; // Do nothing if no active board or no tasks
+                }
+
+                // Add tasks to the correct columns based on their status
+                activeBoardTasks.forEach(task => {
+                    // Find the column element by its ID (which matches the task status) within the active board
+                    const column = boardContainer.querySelector(`#${task.status}`);
+                    if (column) {
+                        // Find the task list div within the column
+                        const taskList = column.querySelector('.task-list');
+                        if (taskList) {
+                             // Create the HTML element for the task
+                             const taskElement = createTaskElement(task);
+                             // Append the task element to the correct task list
+                             taskList.appendChild(taskElement);
+                        } else {
+                             console.error(`Task list not found within column "${task.status}" for task:`, task);
+                        }
+                    } else {
+                        // Log a warning if a column for a task's status doesn't exist
+                        console.warn(`Column with id "${task.status}" not found for task:`, task);
+                    }
+                });
+            }
+        }
+
+         /**
+          * Handles the double-click event on a column header to enable editing.
+          * @param {Event} event - The dblclick event.
+          */
+         function handleColumnHeaderDoubleClick(event) {
+            // Only allow editing on standard boards, not the main board
+            if (activeBoardId === MAIN_BOARD_ID) return;
+
+            const headerDiv = event.target.closest('.column-header');
+            if (!headerDiv) return; // Should not happen if event listener is on .column-header
+
+            const columnId = headerDiv.dataset.columnId;
+            const currentName = headerDiv.querySelector('h2').textContent;
+
+            // Create an input element
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentName;
+            input.className = 'flex-grow p-1 border border-gray-300 rounded-md text-xl font-semibold text-gray-800 outline-none focus:ring-2 focus:ring-blue-500'; // Apply some styling
+
+            // Replace the h2 with the input
+            headerDiv.innerHTML = ''; // Clear existing content
+            headerDiv.appendChild(input);
+
+            // Focus the input and select the text
+            input.focus();
+            input.select();
+
+            // Add event listeners to save the new name
+            const saveName = () => {
+                const newName = input.value.trim();
+                if (newName && newName !== currentName) {
+                    // Find the column in the state and update its name
+                    const activeBoard = boards[activeBoardId];
+                    if (activeBoard) {
+                        const column = activeBoard.columns.find(col => col.id === columnId);
+                        if (column) {
+                            column.name = newName;
+                            saveBoards(); // Save the updated state
+                        }
+                    }
+                }
+                // Replace the input back with the h2
+                renderColumnHeader(headerDiv, columnId); // Re-render this specific header
+            };
+
+            input.addEventListener('blur', saveName); // Save when input loses focus
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault(); // Prevent default form submission if any
+                    saveName(); // Save on Enter key
+                }
+            });
+         }
+
+         /**
+          * Renders a single column header element based on the current state.
+          * Used after editing a column name.
+          * @param {HTMLElement} headerDiv - The existing column header div element.
+          * @param {string} columnId - The ID of the column to render the header for.
+          */
+         function renderColumnHeader(headerDiv, columnId) {
+             const activeBoard = boards[activeBoardId];
+             const column = activeBoard ? activeBoard.columns.find(col => col.id === columnId) : null;
+
+             if (column) {
+                 headerDiv.innerHTML = ''; // Clear existing content
+                 const h2 = document.createElement('h2');
+                 h2.textContent = column.name;
+                 h2.className = 'text-xl font-semibold text-gray-700 mb-0'; // Match original h2 styling
+                 headerDiv.appendChild(h2);
+
+                 // Re-attach the double-click listener
+                 headerDiv.addEventListener('dblclick', handleColumnHeaderDoubleClick);
+             } else {
+                 console.error("Column not found for rendering header:", columnId);
+                 // Optionally, remove the header div or show an error state
+             }
+         }
+
+
+         /**
+          * Deletes a task by its ID from the specified board.
+          * @param {string} taskId - The ID of the task to delete.
+          * @param {string} [boardId=activeBoardId] - The ID of the board the task belongs to. Defaults to the active board.
+          */
+         function deleteTask(taskId, boardId = activeBoardId) {
+            const targetBoard = boards[boardId];
+            if (!targetBoard || !targetBoard.tasks) {
+                 console.error("Cannot delete task: Target board or tasks array not found.", boardId);
+                 return;
+            }
+
+            const taskIndex = targetBoard.tasks.findIndex(task => task.id === taskId);
+            if (taskIndex > -1) {
+                targetBoard.tasks.splice(taskIndex, 1); // Remove the task from the array
+                saveBoards(); // Save the updated state
+                renderTasks(); // Re-render the tasks (will re-render the active board)
+            } else {
+                 console.warn(`Task with ID ${taskId} not found in board ${boardId} for deletion.`);
+            }
+         }
+
+
+        /**
+         * Adds a new task to the 'todo' column of the active board.
+         */
+        function addTask() {
+            // Only allow adding tasks on standard boards, not the main board
+            if (activeBoardId === MAIN_BOARD_ID) {
+                 alert("Cannot add tasks directly to the Main Board. Add tasks to individual project boards."); // Use a simple alert
+                 newTaskInput.value = ''; // Clear the input field
+                 return;
+            }
+
+            const title = newTaskInput.value.trim();
+            if (title === '') {
+                alert('Task title cannot be empty.'); // Use a simple alert for now, could replace with a custom message box
+                return;
+            }
+
+            const activeBoardTasks = getActiveBoardTasks();
+            if (!activeBoardTasks) {
+                 console.error("Cannot add task: No active board tasks array found.");
+                 return;
+            }
+
+            const newTask = {
+                id: generateId(),
+                text: title,
+                status: 'todo', // New tasks go to the 'To Do' column by default
+                description: '',
+                dueDate: '',
+                assignee: '',
+                color: '' // Default color
+            };
+
+            activeBoardTasks.push(newTask); // Add the new task to the active board's tasks
+            newTaskInput.value = ''; // Clear the input field
+            saveBoards(); // Save the updated state
+            renderTasks(); // Re-render the tasks to show the new one
+        }
+
+
+        // --- Drag and Drop Functions ---
+
+        let draggedTask = null; // To keep track of the task being dragged
+
+        /**
+         * Handles the start of a drag operation.
+         * @param {Event} event - The dragstart event.
+         */
+        function dragStart(event) {
+            draggedTask = event.target; // The element being dragged is the task card
+            // Store task ID and its original board ID
+            event.dataTransfer.setData('text/plain', draggedTask.id);
+            event.dataTransfer.setData('text/boardid', draggedTask.dataset.originalBoardId || activeBoardId); // Use originalBoardId if present, otherwise activeBoardId
+
+            setTimeout(() => {
+                draggedTask.classList.add('dragging'); // Add a class for styling while dragging
+            }, 0); // Use setTimeout to allow the element to be cloned before adding the class
+        }
+
+        /**
+         * Handles the end of a drag operation.
+         * @param {Event} event - The dragend event.
+         */
+        function dragEnd(event) {
+            if (draggedTask) {
+                draggedTask.classList.remove('dragging'); // Remove the dragging class
+                draggedTask = null; // Reset the dragged task
+            }
+             // Remove drag-over class from all columns
+             document.querySelectorAll('.kanban-column, .main-board-column').forEach(col => col.classList.remove('drag-over'));
+        }
+
+        /**
+         * Handles a dragged element moving over a valid drop target.
+         * @param {Event} event - The dragover event.
+         */
+        function dragOver(event) {
+            event.preventDefault(); // Necessary to allow dropping
+            const column = event.target.closest('.kanban-column') || event.target.closest('.main-board-column');
+            if (column) {
+                column.classList.add('drag-over'); // Add visual feedback
+            }
+        }
+
+        /**
+         * Handles a dragged element leaving a drop target.
+         * @param {Event} event - The dragleave event.
+         */
+        function dragLeave(event) {
+            const column = event.target.closest('.kanban-column') || event.target.closest('.main-board-column');
+            if (column) {
+                column.classList.remove('drag-over'); // Remove visual feedback
+            }
+        }
+
+        /**
+         * Handles the drop event when a dragged element is dropped onto a STANDARD board column.
+         * Updates the task's status.
+         * @param {Event} event - The drop event.
+         */
+        function drop(event) {
+            event.preventDefault();
+            const column = event.target.closest('.kanban-column');
+            if (!column || activeBoardId === MAIN_BOARD_ID) return; // Not dropped on a standard column or on main board
+
+            column.classList.remove('drag-over'); // Remove visual feedback
+
+            const taskId = event.dataTransfer.getData('text/plain');
+            const originalBoardId = event.dataTransfer.getData('text/boardid'); // Get original board ID
+
+            const taskElement = document.getElementById(taskId);
+            const targetBoard = boards[originalBoardId];
+
+            if (taskElement && column && targetBoard && targetBoard.tasks) {
+                const taskList = column.querySelector('.task-list');
+                const task = targetBoard.tasks.find(t => t.id === taskId);
+
+                if (taskList && task) {
+                    const oldStatus = task.status;
+                    const newStatus = column.id; // The column's ID is the new status
+
+                    // Update status only if dropped on a different status column
+                    if (oldStatus !== newStatus) {
+                        task.status = newStatus;
+                        saveBoards(); // Save the updated state
+
+                        // If dropped on the active board, move the element in the DOM
+                        if (originalBoardId === activeBoardId) {
+                             taskList.appendChild(taskElement);
+                        } else {
+                            // If dropped on a different board, the task will disappear from the current view
+                            // and appear on the other board when that board is selected.
+                            // We need to remove the element from the current DOM if it's still there.
+                             if (taskElement.parentElement) {
+                                 taskElement.parentElement.removeChild(taskElement);
+                             }
+                        }
+
+
+                        // Trigger confetti if moved to 'done' column on its original board
+                        // Or if dropped into the 'done' column on the current active board view
+                        if (newStatus === 'done') {
+                            triggerConfetti();
+                        }
+
+                        // Re-render the relevant boards if needed (e.g., if dragging between boards)
+                        // For simplicity, we'll just re-render the active board.
+                        // A more complex implementation might update both source and target boards.
+                        renderTasks(); // Re-render the active board to reflect changes
+                    }
+                } else {
+                     console.error("Task or task list not found during drop:", taskId, column.id);
+                }
+            } else {
+                 console.warn("Drop failed: Task element, column, or target board not found.");
+            }
+        }
+
+         /**
+          * Handles the drop event when a dragged element is dropped onto a MAIN board column.
+          * Updates the task's color.
+          * @param {Event} event - The drop event.
+          */
+         function dropOnMainBoard(event) {
+             event.preventDefault();
+             const column = event.target.closest('.main-board-column');
+             if (!column || activeBoardId !== MAIN_BOARD_ID) return; // Not dropped on a main board column
+
+             column.classList.remove('drag-over'); // Remove visual feedback
+
+             const taskId = event.dataTransfer.getData('text/plain');
+             const originalBoardId = event.dataTransfer.getData('text/boardid'); // Get original board ID
+             const newColor = column.dataset.color; // The color of the column
+
+             const targetBoard = boards[originalBoardId];
+
+             if (targetBoard && targetBoard.tasks) {
+                 const task = targetBoard.tasks.find(t => t.id === taskId);
+
+                 if (task) {
+                     // Update the task's color in its original board's state
+                     task.color = newColor;
+                     saveBoards(); // Save the updated state
+
+                     // Re-render the main board to reflect the color change
+                     renderMainBoardContent();
+                 } else {
+                     console.error("Task not found in original board during main board drop:", taskId, originalBoardId);
+                 }
+             } else {
+                 console.warn("Drop on main board failed: Target board or tasks array not found.");
+             }
+         }
+
+
+        /**
+         * Triggers a confetti animation.
+         */
+        function triggerConfetti() {
+            confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+        }
+
+        // --- Local Storage ---
+
+        const STORAGE_KEY = 'kanbanBoards';
+
+        /**
+         * Saves the current boards state to local storage.
+         */
+        function saveBoards() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(boards));
+        }
+
+        /**
+         * Loads the boards state from local storage.
+         * @returns {object} The loaded boards object, or an empty object if none found.
+         */
+        function loadBoards() {
+            const storedBoards = localStorage.getItem(STORAGE_KEY);
+            return storedBoards ? JSON.parse(storedBoards) : {};
+        }
+
+        // --- Modal Functions ---
+
+        let currentEditingTaskId = null; // To keep track of the task being edited
+        let currentEditingTaskBoardId = null; // To track the original board of the task being edited
+
+        /**
+         * Opens the task modal and populates it with task data.
+         * @param {string} taskId - The ID of the task to edit.
+         * @param {string} [boardId=activeBoardId] - The ID of the board the task belongs to. Defaults to the active board.
+         */
+        function openTaskModal(taskId, boardId = activeBoardId) {
+            const targetBoard = boards[boardId];
+            if (!targetBoard || !targetBoard.tasks) {
+                 console.error("Cannot open modal: Target board or tasks array not found.", boardId);
+                 return;
+            }
+
+            const task = targetBoard.tasks.find(t => t.id === taskId);
+
+            if (task) {
+                currentEditingTaskId = taskId;
+                currentEditingTaskBoardId = boardId; // Store the original board ID
+                modalTaskId.value = task.id;
+                modalTaskBoardId.value = boardId; // Set the hidden input value
+                modalTaskTitle.value = task.text;
+                modalTaskDescription.value = task.description || ''; // Use empty string for null/undefined
+                modalTaskDueDate.value = task.dueDate || '';
+                modalTaskAssignee.value = task.assignee || '';
+                modalTaskColor.value = task.color || '#e5e7eb'; // Default to gray if no color set
+
+                // Update color swatch selection
+                updateColorSwatchSelection(task.color || '#e5e7eb');
+
+                taskModal.style.display = 'block';
+            } else {
+                console.error("Task not found for modal:", taskId);
+            }
+        }
+
+        /**
+         * Closes the task modal.
+         */
+        function closeTaskModal() {
+            taskModal.style.display = 'none';
+            currentEditingTaskId = null; // Clear the editing task ID
+            currentEditingTaskBoardId = null; // Clear the editing board ID
+            // Clear modal fields
+            modalTaskId.value = '';
+            modalTaskBoardId.value = '';
+            modalTaskTitle.value = '';
+            modalTaskDescription.value = '';
+            modalTaskDueDate.value = '';
+            modalTaskAssignee.value = '';
+            modalTaskColor.value = '#e5e7eb'; // Reset color picker
+             updateColorSwatchSelection('#e5e7eb'); // Reset swatch selection
+        }
+
+        /**
+         * Saves the changes made in the task modal to the task in its original board.
+         */
+        function saveTaskChanges() {
+            if (!currentEditingTaskId || !currentEditingTaskBoardId) return;
+
+            const targetBoard = boards[currentEditingTaskBoardId];
+             if (!targetBoard || !targetBoard.tasks) {
+                 console.error("Cannot save changes: Target board or tasks array not found.", currentEditingTaskBoardId);
+                 return;
+            }
+
+            const task = targetBoard.tasks.find(t => t.id === currentEditingTaskId);
+
+            if (task) {
+                const newTitle = modalTaskTitle.value.trim();
+                 // Ensure title is not empty
+                if (newTitle === '') {
+                     alert('Task title cannot be empty.'); // Use a simple alert for now
+                     return; // Don't save or close if title is empty
+                }
+
+                task.text = newTitle;
+                task.description = modalTaskDescription.value.trim();
+                task.dueDate = modalTaskDueDate.value;
+                task.assignee = modalTaskAssignee.value.trim();
+                task.color = modalTaskColor.value;
+
+                saveBoards(); // Save the updated state
+                renderTasks(); // Re-render tasks to reflect changes (will re-render the active board)
+                closeTaskModal(); // Close the modal
+            } else {
+                console.error("Task not found for saving changes:", currentEditingTaskId);
+            }
+        }
+
+        // Close modal when clicking outside of it
+        window.addEventListener('click', function(event) {
+            if (event.target === taskModal) {
+                closeTaskModal();
+            }
+        });
+
+        // Close modal with the close button
+        closeModalBtn.addEventListener('click', closeTaskModal);
+
+        // Save changes with the save button
+        saveTaskBtn.addEventListener('click', saveTaskChanges);
+
+        // Populate default color swatches
+        function populateColorSwatches() {
+             defaultColorSwatchesContainer = document.getElementById('defaultColorSwatches');
+             defaultColorSwatchesContainer.innerHTML = ''; // Clear existing swatches
+             defaultColors.forEach(color => {
+                 const swatch = document.createElement('span');
+                 swatch.className = 'color-swatch';
+                 swatch.style.backgroundColor = color;
+                 swatch.dataset.color = color; // Store color value
+                 swatch.addEventListener('click', handleSwatchClick);
+                 defaultColorSwatchesContainer.appendChild(swatch);
+             });
+        }
+
+        // Handle click on a color swatch
+        function handleSwatchClick(event) {
+             const selectedColor = event.target.dataset.color;
+             modalTaskColor.value = selectedColor; // Set the color picker value
+             updateColorSwatchSelection(selectedColor); // Update swatch visual selection
+        }
+
+        // Update the visual selection of the color swatches
+        function updateColorSwatchSelection(selectedColor) {
+             const swatches = defaultColorSwatchesContainer.querySelectorAll('.color-swatch');
+             swatches.forEach(swatch => {
+                 swatch.classList.remove('selected');
+                 if (swatch.dataset.color === selectedColor) {
+                     swatch.classList.add('selected');
+                 }
+             });
+        }
+
+        // --- Board Management ---
+
+        /**
+         * Renders the board tabs.
+         */
+        function renderBoardTabs() {
+            boardTabsContainer.innerHTML = ''; // Clear existing tabs
+
+             // Add the Main Board tab first
+             const mainBoardTab = document.createElement('button');
+             mainBoardTab.className = `tab-button ${activeBoardId === MAIN_BOARD_ID ? 'active' : ''}`;
+             mainBoardTab.dataset.boardId = MAIN_BOARD_ID;
+             mainBoardTab.textContent = 'Main Board';
+             mainBoardTab.addEventListener('click', () => switchBoard(MAIN_BOARD_ID));
+             // No double-click or delete for the main board tab
+             boardTabsContainer.appendChild(mainBoardTab);
+
+
+            // Add tabs for each regular board
+            const regularBoardIds = Object.keys(boards).filter(id => id !== MAIN_BOARD_ID);
+            regularBoardIds.forEach(boardId => {
+                const board = boards[boardId];
+                const tabButton = document.createElement('button');
+                tabButton.className = `tab-button ${boardId === activeBoardId ? 'active' : ''}`;
+                tabButton.dataset.boardId = boardId;
+
+                 // Add color indicator
+                 const colorIndicator = document.createElement('span');
+                 colorIndicator.className = 'tab-color-indicator';
+                 colorIndicator.style.backgroundColor = board.color || defaultBoardColors[0]; // Use board color or a default
+                 tabButton.appendChild(colorIndicator);
+
+                 // Add board name text
+                 const nameSpan = document.createElement('span');
+                 nameSpan.textContent = board.name;
+                 tabButton.appendChild(nameSpan);
+
+
+                // Add delete button to the tab (except for the last regular board)
+                if (regularBoardIds.length > 1) {
+                     const deleteBtn = document.createElement('button');
+                     deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
+                     deleteBtn.className = 'delete-board-btn';
+                     deleteBtn.title = `Delete board "${board.name}"`;
+                     deleteBtn.addEventListener('click', (event) => {
+                         event.stopPropagation(); // Prevent activating the tab when clicking delete
+                         deleteBoard(boardId);
+                     });
+                     tabButton.appendChild(deleteBtn);
+                }
+
+                // Add event listeners
+                tabButton.addEventListener('click', () => switchBoard(boardId));
+                tabButton.addEventListener('dblclick', handleBoardTabDoubleClick); // Add double-click listener
+
+                boardTabsContainer.appendChild(tabButton);
+            });
+
+            // Add "Add Board" tab
+            const addBoardTab = document.createElement('button');
+            addBoardTab.id = 'addBoardTab';
+            addBoardTab.innerHTML = '<i class="fas fa-plus"></i> Add Board';
+            addBoardTab.addEventListener('click', addBoard);
+            boardTabsContainer.appendChild(addBoardTab);
+        }
+
+        /**
+         * Handles the double-click event on a board tab to enable editing.
+         * @param {Event} event - The dblclick event.
+         */
+        function handleBoardTabDoubleClick(event) {
+            const tabButton = event.target.closest('.tab-button');
+            if (!tabButton) return;
+
+            const boardId = tabButton.dataset.boardId;
+            // Prevent editing the Main Board tab
+            if (boardId === MAIN_BOARD_ID) return;
+
+            const board = boards[boardId];
+            const currentName = board.name;
+            const currentColor = board.color || defaultBoardColors[0]; // Get current color or default
+
+            // Prevent switching boards when double-clicking to edit
+            event.stopPropagation();
+
+            // Create a container for the input and color picker
+            const editContainer = document.createElement('div');
+            editContainer.className = 'tab-edit-container';
+            // Prevent clicks inside the edit container from propagating and triggering board switch
+            editContainer.addEventListener('click', (e) => e.stopPropagation());
+
+
+            // Create an input element for the name
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.value = currentName;
+
+            // Create a color input element for the color
+            const colorInput = document.createElement('input');
+            colorInput.type = 'color';
+            colorInput.value = currentColor;
+
+
+            editContainer.appendChild(nameInput);
+            editContainer.appendChild(colorInput);
+
+
+            // Temporarily store the delete button if it exists
+            const deleteBtn = tabButton.querySelector('.delete-board-btn');
+            if (deleteBtn) {
+                deleteBtn.remove(); // Remove delete button during editing
+            }
+
+
+            // Replace the button's content with the edit container
+            tabButton.innerHTML = ''; // Clear existing content
+            tabButton.appendChild(editContainer);
+
+            // Focus the name input and select the text
+            nameInput.focus();
+            nameInput.select();
+
+            // Flag to prevent saving when interacting with the color picker
+            let isPickingColor = false;
+
+            // Add mousedown listener to color input to prevent blur on click
+            colorInput.addEventListener('mousedown', (e) => {
+                isPickingColor = true;
+                // e.preventDefault(); // Prevent default mousedown behavior if needed
+            });
+
+            // Add change listener to color input to reset flag after color is picked
+            colorInput.addEventListener('change', () => {
+                isPickingColor = false;
+                // The blur event will handle saving after the color picker closes
+            });
+
+
+            // Add event listeners to save the new name and color
+            const saveChanges = (event) => {
+                 // Check if the blur is happening because focus is moving to the color input
+                 // Use event.relatedTarget to see which element is gaining focus
+                 if (event && event.relatedTarget && (event.relatedTarget === colorInput || colorInput.contains(event.relatedTarget))) {
+                     // Focus is moving to the color input or within it, don't save yet
+                     return;
+                 }
+
+                const newName = nameInput.value.trim();
+                const newColor = colorInput.value;
+
+                // Only update if changes were made
+                if (newName && (newName !== currentName || newColor !== currentColor)) {
+                     board.name = newName;
+                     board.color = newColor;
+                     saveBoards(); // Save the updated state
+                } else if (!newName) {
+                     alert('Board name cannot be empty.'); // Prevent saving with empty name
+                     // Do not re-render, keep the input open for correction
+                     nameInput.focus();
+                     return;
+                }
+
+                // Re-render all tabs to update the display and re-attach listeners
+                renderBoardTabs();
+            };
+
+            // Save on blur for both inputs
+            // Use a small timeout for the name input blur to allow the color picker to open
+             nameInput.addEventListener('blur', (event) => {
+                 setTimeout(() => saveChanges(event), 50); // Add a small delay
+             });
+            colorInput.addEventListener('blur', saveChanges); // Save when color input loses focus
+
+
+            // Save on Enter key press in the name input
+            nameInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault(); // Prevent default form submission
+                    saveChanges(); // Save on Enter key
+                }
+            });
+
+            // Save on Enter key press in the color input (less common, but good practice)
+             colorInput.addEventListener('keypress', function(e) {
+                 if (e.key === 'Enter') {
+                     e.preventDefault();
+                     saveChanges();
+                 }
+             });
+        }
+
+
+        /**
+         * Switches to the specified board.
+         * @param {string} boardId - The ID of the board to switch to.
+         */
+        function switchBoard(boardId) {
+            if (activeBoardId === boardId) return; // Already on this board
+
+            activeBoardId = boardId;
+            saveBoards(); // Save the state with the new active board
+            renderBoardTabs(); // Update tab highlighting
+            renderBoardContent(); // Render the content of the new board
+        }
+
+        /**
+         * Adds a new board.
+         */
+        function addBoard() {
+            const boardName = prompt("Enter name for the new board:");
+            if (boardName && boardName.trim() !== '') {
+                const newBoardId = generateId();
+                 // Assign a random default color to the new board
+                 const randomColor = defaultBoardColors[Math.floor(Math.random() * defaultBoardColors.length)];
+
+                boards[newBoardId] = {
+                    name: boardName.trim(),
+                     color: randomColor, // Assign the random default color
+                     // Initialize with default columns
+                    columns: [
+                        { id: 'todo', name: 'To Do', color: '#f87171' }, // Red
+                        { id: 'inprogress', name: 'In Progress', color: '#facc15' }, // Yellow
+                        { id: 'review', name: 'Review', color: '#a78bfa' }, // Purple
+                        { id: 'done', name: 'Done', color: '#4ade80' } // Green
+                    ],
+                    tasks: []
+                };
+                activeBoardId = newBoardId; // Switch to the new board
+                saveBoards();
+                renderBoardTabs();
+                renderBoardContent();
+            }
+        }
+
+        /**
+         * Deletes a board by its ID.
+         * @param {string} boardId - The ID of the board to delete.
+         */
+        function deleteBoard(boardId) {
+            // Count only regular boards
+            const regularBoardIds = Object.keys(boards).filter(id => id !== MAIN_BOARD_ID);
+
+            if (regularBoardIds.length <= 1) {
+                alert("Cannot delete the last project board."); // Use a simple alert for now
+                return;
+            }
+
+            if (confirm(`Are you sure you want to delete the board "${boards[boardId].name}"? This action cannot be undone.`)) {
+                delete boards[boardId]; // Remove the board from the state
+
+                // If the deleted board was the active one, switch to the first remaining regular board or the main board
+                if (activeBoardId === boardId) {
+                     const remainingRegularBoardIds = Object.keys(boards).filter(id => id !== MAIN_BOARD_ID);
+                    activeBoardId = remainingRegularBoardIds.length > 0 ? remainingRegularBoardIds[0] : MAIN_BOARD_ID;
+                }
+
+                saveBoards();
+                renderBoardTabs();
+                renderBoardContent();
+            }
+        }
+
+        // --- Import/Export Functions ---
+
+        /**
+         * Exports the data for the current active board as a JSON file.
+         * Does not export the Main Board view.
+         */
+        function exportTasks() {
+             if (activeBoardId === MAIN_BOARD_ID) {
+                 alert("Cannot export the Main Board view. Please select a project board to export.");
+                 return;
+             }
+             if (!activeBoardId || !boards[activeBoardId]) {
+                 alert("No active board to export.");
+                 return;
+             }
+             const boardData = boards[activeBoardId];
+             const dataStr = JSON.stringify(boardData, null, 2); // Pretty print JSON
+             const blob = new Blob([dataStr], { type: 'application/json' });
+             const url = URL.createObjectURL(blob);
+             const a = document.createElement('a');
+             a.href = url;
+             a.download = `${boardData.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_board_export.json`; // Sanitize filename
+             document.body.appendChild(a);
+             a.click();
+             document.body.removeChild(a);
+             URL.revokeObjectURL(url); // Clean up the URL object
+         }
+
+         /**
+          * Imports board data from a selected JSON file into the current active board.
+          * Imports as a new board, does not affect the Main Board view directly.
+          */
+         function importTasks(event) {
+             const file = event.target.files[0];
+             if (!file) return;
+
+             // We will always import as a new board, regardless of the active board
+             // if (!activeBoardId) {
+             //     alert("Please select or create a board before importing.");
+             //     return;
+             // }
+
+             const reader = new FileReader();
+             reader.onload = function(e) {
+                 try {
+                     const importedBoardData = JSON.parse(e.target.result);
+
+                     // Basic validation: check if it looks like board data
+                     if (importedBoardData && importedBoardData.name && Array.isArray(importedBoardData.tasks) && Array.isArray(importedBoardData.columns)) {
+                          // Assign a new ID to the imported board to avoid conflicts
+                          const newBoardId = generateId();
+                           // Assign new IDs to imported tasks to prevent conflicts
+                           importedBoardData.tasks.forEach(task => task.id = generateId());
+                           // Ensure columns have IDs if they somehow don't (shouldn't happen with current export)
+                           importedBoardData.columns.forEach(col => col.id = col.id || generateId());
+
+                           // Ensure imported board has a color, assign default if not
+                           importedBoardData.color = importedBoardData.color || defaultBoardColors[0];
+
+
+                          boards[newBoardId] = importedBoardData;
+                          activeBoardId = newBoardId; // Switch to the newly imported board
+
+                         saveBoards();
+                         renderBoardTabs();
+                         renderBoardContent();
+                         alert(`Board "${importedBoardData.name}" imported successfully!`);
+                     } else {
+                         alert("Invalid file format. Please select a valid Kanban board JSON file.");
+                     }
+                 } catch (error) {
+                     alert("Error reading file: " + error.message);
+                     console.error("Import failed:", error);
+                 } finally {
+                     // Clear the file input so the same file can be selected again if needed
+                     event.target.value = '';
+                 }
+             };
+             reader.readAsText(file);
+         }
+
+         /**
+          * Exports the data for ALL boards (excluding the main board view) as a single JSON file.
+          */
+         function exportAllBoards() {
+             // Create a copy of boards data, excluding the main board view if it were stored
+             const boardsToExport = {};
+             for (const boardId in boards) {
+                 if (boardId !== MAIN_BOARD_ID) {
+                     boardsToExport[boardId] = boards[boardId];
+                 }
+             }
+
+             const dataStr = JSON.stringify(boardsToExport, null, 2); // Pretty print JSON
+             const blob = new Blob([dataStr], { type: 'application/json' });
+             const url = URL.createObjectURL(blob);
+             const a = document.createElement('a');
+             a.href = url;
+             a.download = 'all_kanban_boards_export.json';
+             document.body.appendChild(a);
+             a.click();
+             document.body.removeChild(a);
+             URL.revokeObjectURL(url); // Clean up the URL object
+         }
+
+         /**
+          * Imports data for ALL boards from a selected JSON file, replacing current boards.
+          * This will overwrite existing project boards but will not affect the Main Board view logic.
+          */
+         function importAllBoards(event) {
+             const file = event.target.files[0];
+             if (!file) return;
+
+             if (!confirm("Importing all boards will replace your current project boards. Are you sure?")) {
+                 // Clear the file input if the user cancels
+                  event.target.value = '';
+                 return;
+             }
+
+             const reader = new FileReader();
+             reader.onload = function(e) {
+                 try {
+                     const importedBoards = JSON.parse(e.target.result);
+
+                     // Basic validation: check if it's an object and contains board-like structures
+                     if (typeof importedBoards === 'object' && importedBoards !== null) {
+                         // Filter out any potential 'main-board' entry if it was somehow included in the export
+                         const filteredImportedBoards = {};
+                         for (const boardId in importedBoards) {
+                             if (boardId !== MAIN_BOARD_ID) {
+                                 // Ensure imported boards have a color, assign default if not
+                                 importedBoards[boardId].color = importedBoards[boardId].color || defaultBoardColors[0];
+                                 filteredImportedBoards[boardId] = importedBoards[boardId];
+                             }
+                         }
+
+                         boards = filteredImportedBoards; // Replace current boards with imported ones
+
+                         // Ensure there's at least one board after import, if not, create a default
+                         if (Object.keys(boards).length === 0) {
+                             const defaultBoardId = generateId();
+                             boards[defaultBoardId] = {
+                                 name: 'Imported Default Board',
+                                  color: defaultBoardColors[0], // Assign a default color
+                                 columns: [
+                                     { id: 'todo', name: 'To Do', color: '#f87171' },
+                                     { id: 'inprogress', name: 'In Progress', color: '#facc15' },
+                                     { id: 'review', name: 'Review', color: '#a78bfa' },
+                                     { id: 'done', name: 'Done', color: '#4ade80' }
+                                 ],
+                                 tasks: []
+                             };
+                         }
+
+                         // Set the active board to the first one in the imported data, or the default if created
+                         activeBoardId = Object.keys(boards).length > 0 ? Object.keys(boards)[0] : null;
+
+                         saveBoards();
+                         renderBoardTabs();
+                         renderBoardContent();
+                         alert("All boards imported successfully!");
+                     } else {
+                         alert("Invalid file format. Please select a valid ALL boards JSON file.");
+                     }
+                 } catch (error) {
+                     alert("Error reading file: " + error.message);
+                     console.error("Import all boards failed:", error);
+                 } finally {
+                     // Clear the file input so the same file can be selected again if needed
+                     event.target.value = '';
+                 }
+             };
+             reader.readAsText(file);
+         }
+
+
+         /**
+          * Clears all tasks from the currently active board.
+          * Does not affect the Main Board view or tasks on other boards.
+          */
+         function clearAllTasks() {
+             if (activeBoardId === MAIN_BOARD_ID) {
+                 alert("Cannot clear tasks from the Main Board view. Please select a project board to clear.");
+                 return;
+             }
+             if (!activeBoardId || !boards[activeBoardId]) {
+                 alert("No active board to clear.");
+                 return;
+             }
+             if (confirm(`Are you sure you want to clear all tasks from the board "${boards[activeBoardId].name}"? This action cannot be undone.`)) {
+                 boards[activeBoardId].tasks = []; // Clear the tasks array for the active board
+                 saveBoards(); // Save the updated state
+                 renderTasks(); // Re-render to show empty columns
+             }
+         }
+
+         /**
+          * Updates the visibility and text of the action buttons based on the active board.
+          */
+         function updateActionButtonVisibility() {
+             const isMainBoard = activeBoardId === MAIN_BOARD_ID;
+
+             // Export/Import Board buttons
+             exportTasksBtn.style.display = isMainBoard ? 'none' : 'block';
+             importTasksBtn.style.display = isMainBoard ? 'none' : 'block';
+             importTasksInput.style.display = 'none'; // Always hidden, triggered by button
+             clearAllTasksBtn.style.display = isMainBoard ? 'none' : 'block';
+
+             // Export/Import All Boards buttons are always visible
+             exportAllBoardsBtn.style.display = 'block';
+             importAllBoardsBtn.style.display = 'block';
+             importAllBoardsInput.style.display = 'none'; // Always hidden, triggered by button
+         }
+
+
+        // --- Floating Action Button (FAB) and Actions ---
+
+        let fabVisible = false; // State to track if action buttons are visible
+
+        /**
+         * Toggles the visibility of the action buttons container.
+         */
+        function toggleActionButtons() {
+            fabVisible = !fabVisible;
+            actionButtonsContainer.classList.toggle('visible', fabVisible);
+            // Optional: Change FAB icon based on state
+            floatingActionButton.querySelector('i').className = fabVisible ? 'fas fa-times' : 'fas fa-cog';
+        }
+
+
+        // --- Initialization ---
+
+        /**
+         * Initializes the board by loading data, rendering tabs, and setting up the initial board view.
+         */
+        function initializeBoard() {
+            // Get DOM elements that are only available after password unlock
+            boardTabsContainer = document.getElementById('boardTabs');
+            boardContainer = document.getElementById('boardContainer');
+            floatingActionButton = document.getElementById('floatingActionButton');
+            actionButtonsContainer = document.getElementById('actionButtonsContainer');
+            exportTasksBtn = document.getElementById('exportTasksBtn');
+            importTasksBtn = document.getElementById('importTasksBtn');
+            importTasksInput = document.getElementById('importTasksInput');
+            clearAllTasksBtn = document.getElementById('clearAllTasksBtn');
+            exportAllBoardsBtn = document.getElementById('exportAllBoardsBtn');
+            importAllBoardsBtn = document.getElementById('importAllBoardsBtn');
+            importAllBoardsInput = document.getElementById('importAllBoardsInput');
+            defaultColorSwatchesContainer = document.getElementById('defaultColorSwatches');
+
+
+            boards = loadBoards(); // Load boards from local storage
+
+            // If no boards are loaded (excluding the main board ID if it somehow exists), create a default one
+            const regularBoardIds = Object.keys(boards).filter(id => id !== MAIN_BOARD_ID);
+            if (regularBoardIds.length === 0) {
+                const defaultBoardId = generateId();
+                boards[defaultBoardId] = {
+                    name: 'My First Board',
+                     color: defaultBoardColors[0], // Assign a default color
+                     // Define default columns with IDs and names
+                    columns: [
+                        { id: 'todo', name: 'To Do', color: '#f87171' }, // Red
+                        { id: 'inprogress', name: 'In Progress', color: '#facc15' }, // Yellow
+                        { id: 'review', name: 'Review', color: '#a78bfa' }, // Purple
+                        { id: 'done', name: 'Done', color: '#4ade80' } // Green
+                    ],
+                    tasks: []
+                };
+                 activeBoardId = defaultBoardId; // Set the default board as active
+                saveBoards(); // Save the initial default board
+            } else {
+                // Ensure existing boards have a color property if loading old data
+                 regularBoardIds.forEach(boardId => {
+                     if (boards[boardId].color === undefined) {
+                         boards[boardId].color = defaultBoardColors[0]; // Assign a default color
+                     }
+                 });
+                 saveBoards(); // Save with added colors if necessary
+
+                // Set the active board to the first one in the imported data, or the default if created
+                 activeBoardId = regularBoardIds.length > 0 ? regularBoardIds[0] : MAIN_BOARD_ID;
+            }
+
+            renderBoardTabs(); // Render the board tabs
+            renderBoardContent(); // Render the initial active board content
+            populateColorSwatches(); // Populate the color swatches in the modal
+
+            // Add event listeners for FAB and action buttons
+            floatingActionButton.addEventListener('click', toggleActionButtons);
+            exportTasksBtn.addEventListener('click', exportTasks);
+            importTasksBtn.addEventListener('click', () => importTasksInput.click()); // Trigger file input click
+            importTasksInput.addEventListener('change', importTasks);
+            clearAllTasksBtn.addEventListener('click', clearAllTasks);
+            exportAllBoardsBtn.addEventListener('click', exportAllBoards);
+            importAllBoardsBtn.addEventListener('click', () => importAllBoardsInput.click()); // Trigger file input click
+            importAllBoardsInput.addEventListener('change', importAllBoards);
+
+            // Close action buttons if clicking anywhere else
+             document.addEventListener('click', function(event) {
+                 const isClickInsideFab = floatingActionButton.contains(event.target);
+                 const isClickInsideActions = actionButtonsContainer.contains(event.target);
+
+                 if (fabVisible && !isClickInsideFab && !isClickInsideActions) {
+                     toggleActionButtons(); // Hide buttons if clicked outside
+                 }
+             });
+
+             // Prevent clicks inside the action container from closing it
+             actionButtonsContainer.addEventListener('click', function(event) {
+                 event.stopPropagation();
+             });
+
+        }
+
+        // The password check is the entry point, initializeBoard is called after successful unlock.
+        // The password overlay is shown by default via HTML/CSS.
+
+    </script>
+
+</body>
+</html>
